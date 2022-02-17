@@ -1,5 +1,16 @@
 # BilibiliSuitRushBuy[哔哩哔哩装扮抢购脚本]
 
+## 这个脚本为啥有两个分支？
+
+- [`master`](https://github.com/WankkoRee/BilibiliSuitRushBuy/tree/master) 分支为蹲号抢Id模式
+  ```shell
+  git clone -b master https://github.com/WankkoRee/BilibiliSuitRushBuy.git
+  ```
+- [`withoutIDRequirement`](https://github.com/WankkoRee/BilibiliSuitRushBuy/tree/withoutIDRequirement) 分支为定时抢购模式
+  ```shell
+  git clone -b withoutIDRequirement https://github.com/WankkoRee/BilibiliSuitRushBuy.git
+  ```
+
 ## 这个脚本和其他仓库有什么不同？
 
 1. 本项目采用`Golang`编写，比其他采用`Python`编写的脚本更加快速
