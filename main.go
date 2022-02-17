@@ -6,7 +6,6 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -41,6 +40,16 @@ func orderCreate(itemId int, addMonth int, buyNum int64, csrf string, apiCookie 
 		log.Fatal(err)
 	}
 	log.Println(string(respb))
+
+	OrderCreateResultCode, err := jsonparser.GetInt(respb, "code")
+	if err != nil {
+		log.Fatal(err)
+	}
+	if OrderCreateResultCode == 26127 {
+		return ""
+	} else if OrderCreateResultCode != 0 {
+		log.Fatal(string(respb))
+	}
 
 	payData0, err := jsonparser.GetString(respb, "data", "pay_data")
 	if err != nil {
@@ -171,7 +180,7 @@ func buy(payData string, userAgent string, Buvid string, DeviceID string, fpLoca
 	return payResult, nil
 }
 
-func watch(itemId int, targetId int64, limitV int64, buyNum *int64) bool {
+func watch(itemId int, limitT int64) bool {
 	log.Println("开始观望")
 	for {
 		resp, err := http.Get(fmt.Sprintf("https://api.bilibili.com/x/garb/mall/item/suit/v2?item_id=%d&part=suit", itemId))
@@ -194,34 +203,19 @@ func watch(itemId int, targetId int64, limitV int64, buyNum *int64) bool {
 			return false
 		}
 
-		saleQuantity, err := jsonparser.GetString(respb, "data", "item", "properties", "sale_quantity")
+		saleLeftTime, err := jsonparser.GetInt(respb, "data", "sale_left_time")
 		if err != nil {
 			log.Fatal(err)
 			return false
 		}
-		saleQuantityI, err := strconv.ParseInt(saleQuantity, 10, 64)
-		if err != nil {
-			log.Fatal(err)
-			return false
-		}
-		saleSurplus, err := jsonparser.GetInt(respb, "data", "sale_surplus")
-		if err != nil {
-			log.Fatal(err)
-			return false
-		}
-		nowId := saleQuantityI - saleSurplus
-		log.Println(nowId)
+		log.Println(saleLeftTime)
 
-		if nowId < targetId && nowId+*buyNum >= targetId {
+		if saleLeftTime <= limitT {
 			log.Println("开始抢购")
-			*buyNum = targetId - nowId
 			return true
-		} else if nowId >= targetId {
-			log.Println("已经错过")
-			return false
-		}
-
-		if nowId < targetId-limitV {
+		} else if saleLeftTime <= limitT*10 { // 10倍观望时间内加速刷新频率
+			time.Sleep(time.Duration(1) * time.Second)
+		} else {
 			time.Sleep(time.Duration(2) * time.Second)
 		}
 	}
@@ -230,13 +224,12 @@ func watch(itemId int, targetId int64, limitV int64, buyNum *int64) bool {
 func main() {
 	// 请务必确保脚本运行时号里的B币充足，>=永久价格*buyNum
 
-	var limitV int64 = 20 // 观望时无CD刷新的临界值，当前id与目标id相差小于等于临界值时，脚本观望将不再sleep，开启暴风刷新状态
-	// 个人推荐：装扮热门时，id冷门10, id中等70, id热门140；过小容易错过，过大容易ban IP，请自行合理预估
+	var limitT int64 = 3 // 观望时无CD刷新的临界值，当前时间与目标装扮开售时间相差小于等于临界值(秒)时，脚本观望将不再sleep，开启暴风下单状态
+	// 建议3s~5s，过小容易错过，过大容易ban IP，请自行合理预估
 
-	itemId := 33998            // 2022拜年纪 33998
-	addMonth := -1             // -1:永久, 1:一个月，应该不会有人买一个月吧，这个我功能性测试时候用的，就是为了测试能省点钱
-	var targetId int64 = 18168 // 目标粉丝编号，豹子号和炸弹号基本上都有人x10、x10地抢，所以如果有这类需求的话就把下面的参数改大点，大于等于其他人即可，就是比较烧钱
-	var buyNum int64 = 1       // 一次性买几个，当需要抢热门号时建议多买几个，因为号贩子就是这样的，由于是一次性购入，脚本无法比其快，所以只能以暴制暴；如果是冷门id的话那就无所谓了
+	itemId := 33998      // 2022拜年纪 33998
+	addMonth := -1       // -1:永久, 1:一个月，应该不会有人买一个月吧，这个我功能性测试时候用的，就是为了测试能省点钱
+	var buyNum int64 = 1 // 一次性买几个
 
 	// 以下参数在余额不足时抓取下单请求即可获取，在https://api.bilibili.com/x/garb/trade/create数据包中可找到
 	// 以下参数在余额充足时抓取下单请求亦可获取，在https://api.bilibili.com/x/garb/trade/create数据包中可找到
@@ -256,8 +249,11 @@ func main() {
 	paySessionId := ""
 	payDeviceFingerprint := ""
 
-	if watch(itemId, targetId, limitV, &buyNum) { // 观望，并且传递最多需要买几个，不使用Cookie，防止被临时ban号
-		payData := orderCreate(itemId, addMonth, buyNum, apiCsrf, apiCookie, apiUserAgent, apiAccessKey)                                 // 下单
+	if watch(itemId, limitT) { // 观望，不使用Cookie，防止被临时ban号
+		payData := ""
+		for payData == "" {
+			payData = orderCreate(itemId, addMonth, buyNum, apiCsrf, apiCookie, apiUserAgent, apiAccessKey) // 下单
+		}
 		payResult, err := buy(payData, payUserAgent, payBuvid, payDeviceID, payFpLocal, payFpRemote, paySessionId, payDeviceFingerprint) // 购买
 		if err != nil {
 			log.Fatal(err)
